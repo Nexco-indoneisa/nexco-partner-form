@@ -1139,6 +1139,12 @@
 
   <script>
 
+    /*
+     * NEXCO Consultants Google Apps Script API
+     */
+    const APPS_SCRIPT_URL =
+      "https://script.google.com/macros/s/AKfycbwYFBd7GBv4KY3odWk2asULgbY9yh10lsKIpggTcxmNyT4Q56bQL2_uPMDTiZN9xEo5g/exec";
+
 
     const form =
       document.getElementById(
@@ -1164,11 +1170,62 @@
       );
 
 
+    /*
+     * Convert a selected file to Base64.
+     */
+    function fileToBase64(file) {
+
+      return new Promise(
+        function(resolve, reject) {
+
+          if (!file) {
+            resolve(null);
+            return;
+          }
+
+          const reader =
+            new FileReader();
+
+          reader.onload =
+            function() {
+
+              const result =
+                reader.result;
+
+              const base64 =
+                result.split(",")[1];
+
+              resolve({
+                name: file.name,
+                mimeType: file.type,
+                fieldName: "",
+                data: base64
+              });
+
+            };
+
+          reader.onerror =
+            function() {
+
+              reject(
+                new Error(
+                  "Unable to read the selected file."
+                )
+              );
+
+            };
+
+          reader.readAsDataURL(file);
+
+        }
+      );
+
+    }
+
 
     form.addEventListener(
       "submit",
-      function(event) {
-
+      async function(event) {
 
         event.preventDefault();
 
@@ -1179,7 +1236,7 @@
 
         /*
          * Maximum file size:
-         * 10 MB
+         * 10 MB per file
          */
 
         const maxSize =
@@ -1198,7 +1255,6 @@
             .files[0];
 
 
-
         if (
           registrationFile &&
           registrationFile.size >
@@ -1212,7 +1268,6 @@
           return;
 
         }
-
 
 
         if (
@@ -1230,10 +1285,8 @@
         }
 
 
-
         /*
-         * Disable button while
-         * submitting.
+         * Disable button while submitting.
          */
 
         submitButton.disabled =
@@ -1244,85 +1297,167 @@
           "SUBMITTING...";
 
 
+        try {
 
-        /*
-         * Send form to Apps Script.
-         */
+          /*
+           * Collect all normal form fields.
+           */
 
-        google.script.run
+          const formData =
+            {};
 
-          .withSuccessHandler(
-            function(response) {
+          const fields =
+            form.querySelectorAll(
+              "input, select, textarea"
+            );
 
+
+          fields.forEach(
+            function(field) {
 
               if (
-                response.success
+                field.name &&
+                field.type !== "file"
               ) {
 
-
-                form.style.display =
-                  "none";
-
-
-                successBox.style.display =
-                  "block";
-
-
-                window.scrollTo({
-
-                  top: 0,
-
-                  behavior: "smooth"
-
-                });
-
-
-              }
-
-              else {
-
-                showError(
-                  response.message
-                );
+                formData[field.name] =
+                  field.value;
 
               }
 
             }
-          )
-
-
-          .withFailureHandler(
-            function(error) {
-
-
-              console.error(
-                error
-              );
-
-
-              showError(
-                "Something went wrong. Please try again."
-              );
-
-
-            }
-          )
-
-
-          .submitApplication(
-            form
           );
 
+
+          /*
+           * Convert selected files to Base64.
+           */
+
+          const files =
+            [];
+
+
+          if (registrationFile) {
+
+            const file =
+              await fileToBase64(
+                registrationFile
+              );
+
+            file.fieldName =
+              "registrationCertificate";
+
+            files.push(file);
+
+          }
+
+
+          if (companyProfile) {
+
+            const file =
+              await fileToBase64(
+                companyProfile
+              );
+
+            file.fieldName =
+              "companyProfile";
+
+            files.push(file);
+
+          }
+
+
+          /*
+           * Send the application to
+           * Google Apps Script.
+           *
+           * text/plain is intentionally used
+           * so the browser does not send a
+           * CORS preflight request.
+           */
+
+          const payload =
+            JSON.stringify({
+
+              formData:
+                formData,
+
+              files:
+                files
+
+            });
+
+
+          await fetch(
+            APPS_SCRIPT_URL,
+            {
+
+              method: "POST",
+
+              mode: "no-cors",
+
+              headers: {
+                "Content-Type":
+                  "text/plain;charset=utf-8"
+              },
+
+              body:
+                payload
+
+            }
+          );
+
+
+          /*
+           * The Apps Script request has been
+           * sent. Because GitHub Pages and
+           * Apps Script are different domains,
+           * the browser cannot read the response
+           * in no-cors mode.
+           *
+           * The Apps Script backend performs
+           * the actual Drive, Sheet and email work.
+           */
+
+          form.style.display =
+            "none";
+
+
+          successBox.style.display =
+            "block";
+
+
+          window.scrollTo({
+
+            top: 0,
+
+            behavior: "smooth"
+
+          });
+
+
+        }
+
+        catch (error) {
+
+          console.error(
+            error
+          );
+
+
+          showError(
+            "Something went wrong. Please try again."
+          );
+
+        }
 
       }
     );
 
 
-
     function showError(
       message
     ) {
-
 
       errorBox.innerText =
         message;
@@ -1339,9 +1474,7 @@
       submitButton.innerText =
         "SUBMIT PARTNERSHIP APPLICATION";
 
-
     }
-
 
   </script>
 
