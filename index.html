@@ -1141,84 +1141,120 @@
 
     /*
      * NEXCO Consultants Google Apps Script API
+     *
+     * IMPORTANT:
+     * This URL is the NEW backend deployment.
      */
     const APPS_SCRIPT_URL =
-      "https://script.google.com/macros/s/AKfycbwYFBd7GBv4KY3odWk2asULgbY9yh10lsKIpggTcxmNyT4Q56bQL2_uPMDTiZN9xEo5g/exec";
+      "https://script.google.com/macros/s/AKfycby7fgvI-kqpgR3Qrdeh95v1DIEPhA--IFSaKkJZk_zSqWSypgBkgEKthixbU-xY3XJK/exec";
 
 
     const form =
-      document.getElementById(
-        "partnerForm"
-      );
-
+      document.getElementById("partnerForm");
 
     const submitButton =
-      document.getElementById(
-        "submitButton"
-      );
-
+      document.getElementById("submitButton");
 
     const errorBox =
-      document.getElementById(
-        "errorBox"
-      );
-
+      document.getElementById("errorBox");
 
     const successBox =
-      document.getElementById(
-        "successBox"
-      );
+      document.getElementById("successBox");
 
 
     /*
-     * Convert a selected file to Base64.
+     * Convert a browser File object into a
+     * clean Base64 object for Apps Script.
      */
-    function fileToBase64(file) {
+    function readFileAsBase64(file) {
 
-      return new Promise(
-        function(resolve, reject) {
+      return new Promise(function(resolve, reject) {
 
-          if (!file) {
-            resolve(null);
-            return;
-          }
+        if (!file) {
+          resolve(null);
+          return;
+        }
 
-          const reader =
-            new FileReader();
+        const reader = new FileReader();
 
-          reader.onload =
-            function() {
+        reader.onload = function(event) {
 
-              const result =
-                reader.result;
+          try {
 
-              const base64 =
-                result.split(",")[1];
+            const dataUrl = event.target.result;
 
-              resolve({
-                name: file.name,
-                mimeType: file.type,
-                fieldName: "",
-                data: base64
-              });
-
-            };
-
-          reader.onerror =
-            function() {
-
+            if (
+              typeof dataUrl !== "string" ||
+              dataUrl.indexOf(",") === -1
+            ) {
               reject(
                 new Error(
-                  "Unable to read the selected file."
+                  "The selected file could not be converted."
                 )
               );
+              return;
+            }
 
-            };
+            const base64Data =
+              dataUrl.substring(
+                dataUrl.indexOf(",") + 1
+              );
 
-          reader.readAsDataURL(file);
+            resolve({
+              name: file.name,
+              mimeType:
+                file.type ||
+                "application/octet-stream",
+              size: file.size,
+              data: base64Data
+            });
 
+          } catch (error) {
+            reject(error);
+          }
+
+        };
+
+        reader.onerror = function() {
+          reject(
+            new Error(
+              "Unable to read the selected file."
+            )
+          );
+        };
+
+        reader.readAsDataURL(file);
+
+      });
+
+    }
+
+
+    /*
+     * Collect normal form fields.
+     */
+    function collectFormData() {
+
+      const data = {};
+
+      const fields =
+        form.querySelectorAll(
+          "input, select, textarea"
+        );
+
+      fields.forEach(function(field) {
+
+        if (
+          field.name &&
+          field.type !== "file"
+        ) {
+          data[field.name] =
+            field.value || "";
         }
-      );
+
+      });
+
+      return data;
 
     }
 
@@ -1229,36 +1265,54 @@
 
         event.preventDefault();
 
-
-        errorBox.style.display =
-          "none";
+        errorBox.style.display = "none";
 
 
         /*
-         * Maximum file size:
-         * 10 MB per file
+         * Maximum file size shown by the form:
+         * 10 MB per file.
          */
-
         const maxSize =
           10 * 1024 * 1024;
 
 
-        const registrationFile =
-          form
-            .registrationCertificate
-            .files[0];
+        /*
+         * IMPORTANT:
+         * Get the file inputs explicitly by NAME.
+         * This is more reliable than form.property access.
+         */
+        const registrationInput =
+          document.querySelector(
+            'input[name="registrationCertificate"]'
+          );
 
+        const profileInput =
+          document.querySelector(
+            'input[name="companyProfile"]'
+          );
+
+
+        const registrationFile =
+          registrationInput &&
+          registrationInput.files &&
+          registrationInput.files.length
+            ? registrationInput.files[0]
+            : null;
 
         const companyProfile =
-          form
-            .companyProfile
-            .files[0];
+          profileInput &&
+          profileInput.files &&
+          profileInput.files.length
+            ? profileInput.files[0]
+            : null;
 
 
+        /*
+         * Check file sizes.
+         */
         if (
           registrationFile &&
-          registrationFile.size >
-          maxSize
+          registrationFile.size > maxSize
         ) {
 
           showError(
@@ -1272,8 +1326,7 @@
 
         if (
           companyProfile &&
-          companyProfile.size >
-          maxSize
+          companyProfile.size > maxSize
         ) {
 
           showError(
@@ -1286,12 +1339,9 @@
 
 
         /*
-         * Disable button while submitting.
+         * Disable button.
          */
-
-        submitButton.disabled =
-          true;
-
+        submitButton.disabled = true;
 
         submitButton.innerText =
           "SUBMITTING...";
@@ -1300,90 +1350,60 @@
         try {
 
           /*
-           * Collect all normal form fields.
+           * Collect text fields.
            */
-
           const formData =
-            {};
-
-          const fields =
-            form.querySelectorAll(
-              "input, select, textarea"
-            );
-
-
-          fields.forEach(
-            function(field) {
-
-              if (
-                field.name &&
-                field.type !== "file"
-              ) {
-
-                formData[field.name] =
-                  field.value;
-
-              }
-
-            }
-          );
+            collectFormData();
 
 
           /*
-           * Convert selected files to Base64.
+           * Read files.
            */
-
-          const files =
-            {};
+          const files = {};
 
 
           if (registrationFile) {
 
-            const file =
-              await fileToBase64(
+            files.registrationCertificate =
+              await readFileAsBase64(
                 registrationFile
               );
-
-            files.registrationCertificate =
-              file;
 
           }
 
 
           if (companyProfile) {
 
-            const file =
-              await fileToBase64(
+            files.companyProfile =
+              await readFileAsBase64(
                 companyProfile
               );
-
-            files.companyProfile =
-              file;
 
           }
 
 
           /*
-           * Send the application to
-           * Google Apps Script.
+           * Build JSON payload.
            *
-           * text/plain is intentionally used
-           * so the browser does not send a
-           * CORS preflight request.
+           * text/plain avoids a browser CORS
+           * preflight request.
            */
-
           const payload =
             JSON.stringify({
 
-              formData:
-                formData,
+              formData: formData,
 
-              files:
-                files
+              files: files
 
             });
 
 
+          /*
+           * Send to Apps Script.
+           *
+           * no-cors means the browser cannot read
+           * the response, but the POST itself is sent.
+           */
           await fetch(
             APPS_SCRIPT_URL,
             {
@@ -1397,51 +1417,37 @@
                   "text/plain;charset=utf-8"
               },
 
-              body:
-                payload
+              body: payload
 
             }
           );
 
 
           /*
-           * The Apps Script request has been
-           * sent. Because GitHub Pages and
-           * Apps Script are different domains,
-           * the browser cannot read the response
-           * in no-cors mode.
-           *
-           * The Apps Script backend performs
-           * the actual Drive, Sheet and email work.
+           * The backend now handles:
+           * Drive
+           * Sheet
+           * Email
            */
+          form.style.display = "none";
 
-          form.style.display =
-            "none";
-
-
-          successBox.style.display =
-            "block";
-
+          successBox.style.display = "block";
 
           window.scrollTo({
-
             top: 0,
-
             behavior: "smooth"
-
           });
 
 
-        }
-
-        catch (error) {
+        } catch (error) {
 
           console.error(
+            "NEXCO submission error:",
             error
           );
 
-
           showError(
+            error.message ||
             "Something went wrong. Please try again."
           );
 
@@ -1451,21 +1457,16 @@
     );
 
 
-    function showError(
-      message
-    ) {
+    function showError(message) {
 
       errorBox.innerText =
         message;
 
-
       errorBox.style.display =
         "block";
 
-
       submitButton.disabled =
         false;
-
 
       submitButton.innerText =
         "SUBMIT PARTNERSHIP APPLICATION";
